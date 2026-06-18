@@ -1,0 +1,118 @@
+---
+- name: RHEL Production Patching with Pre & Post Checks
+  hosts: all
+  become: yes
+  gather_facts: yes
+
+  vars:
+    reboot_required_file: /var/run/reboot-required
+    log_file: /var/log/patching_{{ inventory_hostname }}.log
+
+  tasks:
+
+  # =========================
+  # PRE-CHECKS
+  # =========================
+
+  - name: Start logging
+    shell: echo "==== PATCHING STARTED {{ ansible_date_time.iso8601 }} ====" >> {{ log_file }}
+
+  - name: Check uptime
+    shell: uptime
+    register: uptime_out
+
+  - name: Log uptime
+    shell: echo "{{ uptime_out.stdout }}" >> {{ log_file }}
+
+  - name: Check disk usage
+    shell: df -h
+    register: disk_out
+
+  - name: Log disk usage
+    shell: echo "{{ disk_out.stdout }}" >> {{ log_file }}
+
+  - name: Check current kernel
+    shell: uname -r
+    register: kernel_before
+
+  - name: Log kernel version
+    shell: echo "Kernel Before: {{ kernel_before.stdout }}" >> {{ log_file }}
+
+  - name: Check installed security updates
+    shell: yum check-update --security || true
+    register: sec_updates
+
+  - name: Log security updates
+    shell: echo "{{ sec_updates.stdout }}" >> {{ log_file }}
+
+  # =========================
+  # PATCHING
+  # =========================
+
+  - name: Clean yum cache
+    yum:
+      name: "*"
+      state: latest
+      update_cache: yes
+
+  - name: Apply security & bugfix updates
+    yum:
+      name: "*"
+      state: latest
+      security: yes
+
+  # =========================
+  # CHECK REBOOT REQUIRED
+  # =========================
+
+  - name: Check if reboot required (kernel update)
+    shell: needs-restarting -r
+    register: reboot_check
+    failed_when: false
+    changed_when: false
+
+  - name: Set reboot flag
+    set_fact:
+      reboot_required: "{{ reboot_check.rc != 0 }}"
+
+  # =========================
+  # REBOOT SECTION
+  # =========================
+
+  - name: Reboot server if required
+    reboot:
+      reboot_timeout: 1800
+      test_command: uptime
+    when: reboot_required
+
+  # =========================
+  # POST-CHECKS
+  # =========================
+
+  - name: Check uptime after reboot
+    shell: uptime
+    register: uptime_after
+
+  - name: Log uptime after reboot
+    shell: echo "Post Reboot Uptime: {{ uptime_after.stdout }}" >> {{ log_file }}
+
+  - name: Check kernel after reboot
+    shell: uname -r
+    register: kernel_after
+
+  - name: Log kernel after reboot
+    shell: echo "Kernel After: {{ kernel_after.stdout }}" >> {{ log_file }}
+
+  - name: Validate system health (basic)
+    shell: systemctl is-system-running || true
+    register: system_status
+
+  - name: Log system status
+    shell: echo "System Status: {{ system_status.stdout }}" >> {{ log_file }}
+
+  # =========================
+  # FINAL STATUS
+  # =========================
+
+  - name: Final completion log
+    shell: echo "==== PATCHING COMPLETED {{ ansible_date_time.iso8601 }} ====" >> {{ log_file }}
