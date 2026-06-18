@@ -1,0 +1,18 @@
+---
+- name: Collect Server Information
+  hosts: all
+  become: true
+  gather_facts: true
+
+  tasks:
+
+    - name: Display server information
+      debug:
+        msg:
+          - "Hostname: {{ ansible_hostname }}"
+          - "FQDN: {{ ansible_fqdn }}"
+          - "IP Address: {{ ansible_default_ipv4.address | default('N/A') }}"
+          - "OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "Kernel: {{ ansible_kernel }}"
+          - "Architecture: {{ ansible_architecture }}"
+          - "User Running Playbook: {{ ansible_user_id }}"
