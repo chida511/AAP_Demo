@@ -1,8 +1,9 @@
 ---
-- name: Enterprise RHEL Patching with Pre/Post Validation
+- name: Enterprise RHEL Patching with Safe Logging & Validation
   hosts: all
   become: yes
   gather_facts: yes
+  any_errors_fatal: true
 
   vars:
     log_file: "/var/log/patching_{{ inventory_hostname }}.log"
@@ -13,69 +14,72 @@
   # PRE-CHECKS
   # =========================
 
-  - name: Create log file header
+  - name: Initialize patch log
     copy:
       dest: "{{ log_file }}"
       content: |
-        ================================
+        =====================================
         PATCHING STARTED: {{ ansible_date_time.iso8601 }}
-        Host: {{ inventory_hostname }}
-        ================================
+        HOST: {{ inventory_hostname }}
+        =====================================
 
-  - name: Capture system facts summary
-    copy:
-      dest: "{{ log_file }}"
-      content: |
-        Uptime: {{ ansible_uptime_seconds }} seconds
-        Kernel: {{ ansible_kernel }}
-        OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
-      mode: append
+  - name: Collect system baseline info
+    blockinfile:
+      path: "{{ log_file }}"
+      block: |
+        Uptime (seconds): {{ ansible_facts['uptime_seconds'] | default('N/A') }}
+        Kernel: {{ ansible_facts['kernel'] }}
+        OS: {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}
 
   - name: Check disk usage
-    shell: df -h
+    command: df -h
     register: disk_out
+    changed_when: false
 
-  - name: Append disk usage to log
-    copy:
-      dest: "{{ log_file }}"
-      content: |
-        ---- DISK USAGE ----
+  - name: Log disk usage
+    blockinfile:
+      path: "{{ log_file }}"
+      block: |
+        ----- DISK USAGE -----
         {{ disk_out.stdout }}
-      mode: append
 
-  - name: Check available security updates
-    command: yum updateinfo list security
+  - name: Check security updates
+    command: dnf updateinfo list security
     register: sec_updates
     changed_when: false
     failed_when: false
 
   - name: Log security updates
-    copy:
-      dest: "{{ log_file }}"
-      content: |
-        ---- SECURITY UPDATES ----
+    blockinfile:
+      path: "{{ log_file }}"
+      block: |
+        ----- SECURITY UPDATES -----
         {{ sec_updates.stdout }}
-      mode: append
 
   # =========================
   # PATCHING
   # =========================
 
-  - name: Clean metadata cache
+  - name: Refresh DNF cache
     dnf:
       update_cache: yes
 
-  - name: Apply full system updates
+  - name: Apply all system updates
     dnf:
       name: "*"
       state: latest
-      update_only: yes
+    register: patch_result
+
+  - name: Fail if patching failed
+    fail:
+      msg: "Patch installation failed on {{ inventory_hostname }}"
+    when: patch_result is failed
 
   # =========================
-  # REBOOT DETECTION
+  # REBOOT CHECK
   # =========================
 
-  - name: Check if reboot is required
+  - name: Check if reboot required
     command: needs-restarting -r
     register: reboot_check
     failed_when: false
@@ -84,10 +88,6 @@
   - name: Set reboot flag
     set_fact:
       reboot_required: "{{ reboot_check.rc != 0 }}"
-
-  # =========================
-  # REBOOT
-  # =========================
 
   - name: Reboot system if required
     reboot:
@@ -99,7 +99,7 @@
   # POST-CHECKS
   # =========================
 
-  - name: Validate kernel after patch
+  - name: Verify kernel after patch
     command: uname -r
     register: kernel_after
     changed_when: false
@@ -107,18 +107,16 @@
   - name: Check system health
     command: systemctl is-system-running
     register: system_health
-    failed_when: false
     changed_when: false
+    failed_when: false
 
-  - name: Final system validation
-    copy:
-      dest: "{{ log_file }}"
-      content: |
-        ================================
+  - name: Final log entry
+    blockinfile:
+      path: "{{ log_file }}"
+      block: |
+        =====================================
         PATCHING COMPLETED: {{ ansible_date_time.iso8601 }}
-
         Kernel After: {{ kernel_after.stdout }}
         System Health: {{ system_health.stdout }}
         Reboot Performed: {{ reboot_required }}
-        ================================
-      mode: append
+        =====================================
