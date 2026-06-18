@@ -1,0 +1,9 @@
+---
+- name: AAP Hello World Demo
+  hosts: all
+  gather_facts: false
+
+  tasks:
+    - name: Display welcome message
+      debug:
+        msg: "Hello from GitHub and Ansible Automation Platform!"
