@@ -1,12 +1,11 @@
 ---
-- name: RHEL Production Patching with Pre & Post Checks
+- name: Enterprise RHEL Patching with Pre/Post Validation
   hosts: all
   become: yes
   gather_facts: yes
 
   vars:
-    reboot_required_file: /var/run/reboot-required
-    log_file: /var/log/patching_{{ inventory_hostname }}.log
+    log_file: "/var/log/patching_{{ inventory_hostname }}.log"
 
   tasks:
 
@@ -14,59 +13,70 @@
   # PRE-CHECKS
   # =========================
 
-  - name: Start logging
-    shell: echo "==== PATCHING STARTED {{ ansible_date_time.iso8601 }} ====" >> {{ log_file }}
+  - name: Create log file header
+    copy:
+      dest: "{{ log_file }}"
+      content: |
+        ================================
+        PATCHING STARTED: {{ ansible_date_time.iso8601 }}
+        Host: {{ inventory_hostname }}
+        ================================
 
-  - name: Check uptime
-    shell: uptime
-    register: uptime_out
-
-  - name: Log uptime
-    shell: echo "{{ uptime_out.stdout }}" >> {{ log_file }}
+  - name: Capture system facts summary
+    copy:
+      dest: "{{ log_file }}"
+      content: |
+        Uptime: {{ ansible_uptime_seconds }} seconds
+        Kernel: {{ ansible_kernel }}
+        OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+      mode: append
 
   - name: Check disk usage
     shell: df -h
     register: disk_out
 
-  - name: Log disk usage
-    shell: echo "{{ disk_out.stdout }}" >> {{ log_file }}
+  - name: Append disk usage to log
+    copy:
+      dest: "{{ log_file }}"
+      content: |
+        ---- DISK USAGE ----
+        {{ disk_out.stdout }}
+      mode: append
 
-  - name: Check current kernel
-    shell: uname -r
-    register: kernel_before
-
-  - name: Log kernel version
-    shell: echo "Kernel Before: {{ kernel_before.stdout }}" >> {{ log_file }}
-
-  - name: Check installed security updates
-    shell: yum check-update --security || true
+  - name: Check available security updates
+    command: yum updateinfo list security
     register: sec_updates
+    changed_when: false
+    failed_when: false
 
   - name: Log security updates
-    shell: echo "{{ sec_updates.stdout }}" >> {{ log_file }}
+    copy:
+      dest: "{{ log_file }}"
+      content: |
+        ---- SECURITY UPDATES ----
+        {{ sec_updates.stdout }}
+      mode: append
 
   # =========================
   # PATCHING
   # =========================
 
-  - name: Clean yum cache
-    yum:
-      name: "*"
-      state: latest
+  - name: Clean metadata cache
+    dnf:
       update_cache: yes
 
-  - name: Apply security & bugfix updates
-    yum:
+  - name: Apply full system updates
+    dnf:
       name: "*"
       state: latest
-      security: yes
+      update_only: yes
 
   # =========================
-  # CHECK REBOOT REQUIRED
+  # REBOOT DETECTION
   # =========================
 
-  - name: Check if reboot required (kernel update)
-    shell: needs-restarting -r
+  - name: Check if reboot is required
+    command: needs-restarting -r
     register: reboot_check
     failed_when: false
     changed_when: false
@@ -76,10 +86,10 @@
       reboot_required: "{{ reboot_check.rc != 0 }}"
 
   # =========================
-  # REBOOT SECTION
+  # REBOOT
   # =========================
 
-  - name: Reboot server if required
+  - name: Reboot system if required
     reboot:
       reboot_timeout: 1800
       test_command: uptime
@@ -89,30 +99,26 @@
   # POST-CHECKS
   # =========================
 
-  - name: Check uptime after reboot
-    shell: uptime
-    register: uptime_after
-
-  - name: Log uptime after reboot
-    shell: echo "Post Reboot Uptime: {{ uptime_after.stdout }}" >> {{ log_file }}
-
-  - name: Check kernel after reboot
-    shell: uname -r
+  - name: Validate kernel after patch
+    command: uname -r
     register: kernel_after
+    changed_when: false
 
-  - name: Log kernel after reboot
-    shell: echo "Kernel After: {{ kernel_after.stdout }}" >> {{ log_file }}
+  - name: Check system health
+    command: systemctl is-system-running
+    register: system_health
+    failed_when: false
+    changed_when: false
 
-  - name: Validate system health (basic)
-    shell: systemctl is-system-running || true
-    register: system_status
+  - name: Final system validation
+    copy:
+      dest: "{{ log_file }}"
+      content: |
+        ================================
+        PATCHING COMPLETED: {{ ansible_date_time.iso8601 }}
 
-  - name: Log system status
-    shell: echo "System Status: {{ system_status.stdout }}" >> {{ log_file }}
-
-  # =========================
-  # FINAL STATUS
-  # =========================
-
-  - name: Final completion log
-    shell: echo "==== PATCHING COMPLETED {{ ansible_date_time.iso8601 }} ====" >> {{ log_file }}
+        Kernel After: {{ kernel_after.stdout }}
+        System Health: {{ system_health.stdout }}
+        Reboot Performed: {{ reboot_required }}
+        ================================
+      mode: append
