@@ -6,4 +6,4 @@
   tasks:
     - name: Display welcome message
       debug:
-        msg: "Hello from GitHub and Ansible Automation Platform!"
+        msg: "Welcome Chidananda Reddy ----  GitHub and Ansible Automation Platform!"
