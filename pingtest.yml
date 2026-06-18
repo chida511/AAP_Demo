@@ -1,0 +1,9 @@
+---
+- name: Test Connectivity
+  hosts: all
+  gather_facts: true
+
+  tasks:
+    - name: Show hostname
+      debug:
+        msg: "Connected to {{ inventory_hostname }}"
