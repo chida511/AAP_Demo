@@ -1,0 +1,51 @@
+---
+- name: RHEL Subscription Registration Playbook
+  hosts: all
+  become: yes
+  gather_facts: yes
+
+  vars:
+    report_dir: "/home/creddy/patching/reports/{{ ansible_date_time.date }}"
+
+  tasks:
+
+    - name: Check if system is already registered
+      command: subscription-manager identity
+      register: reg_check
+      failed_when: false
+      changed_when: false
+
+    - name: Debug registration status
+      debug:
+        msg: "System already registered"
+      when: reg_check.rc == 0
+
+    - name: Register system if not registered (AAP Vault)
+      command: >
+        subscription-manager register
+        --username {{ rh_username }}
+        --password {{ rh_password }}
+        --auto-attach
+      when: reg_check.rc != 0
+      no_log: true
+      register: reg_result
+
+    - name: Verify registration after execution
+      command: subscription-manager identity
+      register: identity
+      changed_when: false
+
+    - name: Save registration report to localhost
+      copy:
+        dest: "{{ report_dir }}/registration_{{ inventory_hostname }}.txt"
+        content: |
+          Hostname: {{ inventory_hostname }}
+          Registration Status: SUCCESS
+          Identity:
+          {{ identity.stdout }}
+      delegate_to: localhost
+
+    - name: Fail if registration failed
+      fail:
+        msg: "Subscription registration failed for {{ inventory_hostname }}"
+      when: identity.rc != 0
