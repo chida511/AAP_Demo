@@ -1,0 +1,381 @@
+---
+###############################################################################
+#
+# Playbook Name : precheck.yml
+#
+# Purpose:
+# Collect Linux Server Precheck Information Before Patching
+#
+# Author          : Chidananda Reddy
+# Designation     : Linux / AWS / Ansible / Cloud Automation Engineer
+# Playbook Writer : Chidananda Reddy
+#
+# Version         : 1.0
+# Created Date    : 19-Jun-2026
+#
+# Description:
+# This playbook collects server health information before patching
+# and stores reports centrally on the AAP Controller node.
+#
+# Report Location:
+# /var/tmp/patching_reports/<hostname>_precheck.txt
+#
+# Execution:
+# ansible-playbook -i inventory precheck.yml
+#
+###############################################################################
+
+- name: Linux Precheck Validation Before Patching
+  hosts: all
+  become: yes
+  gather_facts: yes
+
+  vars:
+
+    # Location on AAP Controller where reports are stored
+    report_dir: "/var/tmp/patching_reports"
+
+    # Playbook metadata
+    author: "Chidananda Reddy"
+    designation: "Linux / AWS / Ansible / Cloud Automation Engineer"
+    version: "1.0"
+
+  tasks:
+
+  ###########################################################################
+  # Create Central Report Directory
+  ###########################################################################
+
+  - name: Create report directory on AAP Controller
+    file:
+      path: "{{ report_dir }}"
+      state: directory
+      mode: '0755'
+    delegate_to: localhost
+
+  ###########################################################################
+  # Hostname Information
+  ###########################################################################
+
+  - name: Collect Hostname
+    command: hostname
+    register: hostname_out
+    changed_when: false
+
+  ###########################################################################
+  # OS Information
+  ###########################################################################
+
+  - name: Collect OS Version
+    command: cat /etc/redhat-release
+    register: os_version
+    changed_when: false
+
+  ###########################################################################
+  # Kernel Information
+  ###########################################################################
+
+  - name: Collect Kernel Version
+    command: uname -r
+    register: kernel_version
+    changed_when: false
+
+  ###########################################################################
+  # Uptime Information
+  ###########################################################################
+
+  - name: Collect Uptime
+    command: uptime
+    register: uptime_info
+    changed_when: false
+
+  ###########################################################################
+  # CPU Information
+  ###########################################################################
+
+  - name: Collect CPU Details
+    command: lscpu
+    register: cpu_info
+    changed_when: false
+
+  ###########################################################################
+  # Memory Information
+  ###########################################################################
+
+  - name: Collect Memory Details
+    command: free -m
+    register: memory_info
+    changed_when: false
+
+  ###########################################################################
+  # Filesystem Information
+  ###########################################################################
+
+  - name: Collect Filesystem Usage
+    command: df -h
+    register: filesystem_info
+    changed_when: false
+
+  ###########################################################################
+  # Mount Information
+  ###########################################################################
+
+  - name: Collect Mount Information
+    command: mount
+    register: mount_info
+    changed_when: false
+
+  ###########################################################################
+  # Check Root Filesystem Utilization
+  ###########################################################################
+
+  - name: Collect Root Filesystem Usage Percentage
+    shell: df -h / | awk 'NR==2 {print $5}'
+    register: root_usage
+    changed_when: false
+
+  ###########################################################################
+  # Running Services
+  ###########################################################################
+
+  - name: Collect Running Services
+    shell: systemctl list-units --type=service --state=running
+    register: running_services
+    changed_when: false
+
+  ###########################################################################
+  # Failed Services
+  ###########################################################################
+
+  - name: Collect Failed Services
+    shell: systemctl --failed
+    register: failed_services
+    changed_when: false
+    failed_when: false
+
+  ###########################################################################
+  # Network Interfaces
+  ###########################################################################
+
+  - name: Collect Network Information
+    command: ip addr
+    register: ip_info
+    changed_when: false
+
+  ###########################################################################
+  # Routing Information
+  ###########################################################################
+
+  - name: Collect Routing Table
+    command: ip route
+    register: route_info
+    changed_when: false
+
+  ###########################################################################
+  # Listening Ports
+  ###########################################################################
+
+  - name: Collect Listening Ports
+    command: ss -tulpn
+    register: listening_ports
+    changed_when: false
+
+  ###########################################################################
+  # Top CPU Processes
+  ###########################################################################
+
+  - name: Collect Top CPU Processes
+    shell: ps -eo pid,user,%cpu,%mem,cmd --sort=-%cpu | head -20
+    register: top_cpu
+    changed_when: false
+
+  ###########################################################################
+  # Top Memory Processes
+  ###########################################################################
+
+  - name: Collect Top Memory Processes
+    shell: ps -eo pid,user,%cpu,%mem,cmd --sort=-%mem | head -20
+    register: top_memory
+    changed_when: false
+
+  ###########################################################################
+  # Installed Packages
+  ###########################################################################
+
+  - name: Collect Installed Packages
+    shell: rpm -qa | sort
+    register: installed_packages
+    changed_when: false
+
+  ###########################################################################
+  # Available Updates
+  ###########################################################################
+
+  - name: Check Available Updates
+    command: dnf check-update
+    register: available_updates
+    failed_when: false
+    changed_when: false
+
+  ###########################################################################
+  # Reboot Requirement Check
+  ###########################################################################
+
+  - name: Check Reboot Requirement
+    shell: needs-restarting -r
+    register: reboot_check
+    failed_when: false
+    changed_when: false
+
+  ###########################################################################
+  # SELinux Status
+  ###########################################################################
+
+  - name: Collect SELinux Status
+    command: sestatus
+    register: selinux_status
+    changed_when: false
+    failed_when: false
+
+  ###########################################################################
+  # Subscription Status
+  ###########################################################################
+
+  - name: Check Subscription Status
+    command: subscription-manager status
+    register: subscription_status
+    changed_when: false
+    failed_when: false
+
+  ###########################################################################
+  # Save Report on AAP Controller
+  ###########################################################################
+
+  - name: Generate Precheck Report
+    copy:
+      dest: "{{ report_dir }}/{{ inventory_hostname }}_precheck.txt"
+      content: |
+
+        ===================================================================
+                           PRECHECK REPORT
+        ===================================================================
+
+        Author          : {{ author }}
+        Designation     : {{ designation }}
+        Playbook Version: {{ version }}
+        Server          : {{ inventory_hostname }}
+        Date            : {{ ansible_date_time.date }}
+        Time            : {{ ansible_date_time.time }}
+
+        ===================================================================
+        HOSTNAME
+        ===================================================================
+        {{ hostname_out.stdout }}
+
+        ===================================================================
+        OS VERSION
+        ===================================================================
+        {{ os_version.stdout }}
+
+        ===================================================================
+        KERNEL VERSION
+        ===================================================================
+        {{ kernel_version.stdout }}
+
+        ===================================================================
+        UPTIME
+        ===================================================================
+        {{ uptime_info.stdout }}
+
+        ===================================================================
+        CPU INFORMATION
+        ===================================================================
+        {{ cpu_info.stdout }}
+
+        ===================================================================
+        MEMORY INFORMATION
+        ===================================================================
+        {{ memory_info.stdout }}
+
+        ===================================================================
+        FILESYSTEM USAGE
+        ===================================================================
+        {{ filesystem_info.stdout }}
+
+        ===================================================================
+        ROOT FILESYSTEM USAGE
+        ===================================================================
+        {{ root_usage.stdout }}
+
+        ===================================================================
+        MOUNT INFORMATION
+        ===================================================================
+        {{ mount_info.stdout }}
+
+        ===================================================================
+        RUNNING SERVICES
+        ===================================================================
+        {{ running_services.stdout }}
+
+        ===================================================================
+        FAILED SERVICES
+        ===================================================================
+        {{ failed_services.stdout }}
+
+        ===================================================================
+        NETWORK INFORMATION
+        ===================================================================
+        {{ ip_info.stdout }}
+
+        ===================================================================
+        ROUTING TABLE
+        ===================================================================
+        {{ route_info.stdout }}
+
+        ===================================================================
+        LISTENING PORTS
+        ===================================================================
+        {{ listening_ports.stdout }}
+
+        ===================================================================
+        TOP CPU PROCESSES
+        ===================================================================
+        {{ top_cpu.stdout }}
+
+        ===================================================================
+        TOP MEMORY PROCESSES
+        ===================================================================
+        {{ top_memory.stdout }}
+
+        ===================================================================
+        REBOOT REQUIREMENT
+        ===================================================================
+        {{ reboot_check.stdout }}
+
+        ===================================================================
+        SELINUX STATUS
+        ===================================================================
+        {{ selinux_status.stdout }}
+
+        ===================================================================
+        SUBSCRIPTION STATUS
+        ===================================================================
+        {{ subscription_status.stdout }}
+
+        ===================================================================
+        AVAILABLE UPDATES
+        ===================================================================
+        {{ available_updates.stdout }}
+
+    delegate_to: localhost
+
+  ###########################################################################
+  # Display Report Location
+  ###########################################################################
+
+  - name: Display Report Location
+    debug:
+      msg:
+        - "Precheck completed successfully"
+        - "Report Location:"
+        - "{{ report_dir }}/{{ inventory_hostname }}_precheck.txt"
