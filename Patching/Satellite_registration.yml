@@ -27,7 +27,7 @@
         --password {{ rh_password }}
         --auto-attach
       when: reg_check.rc != 0
-      no_log: true
+      no_log: false
       register: reg_result
 
     - name: Verify registration after execution
