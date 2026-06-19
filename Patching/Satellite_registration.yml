@@ -3,11 +3,11 @@
   hosts: all
   become: yes
   gather_facts: yes
-- name: Create temp directory
-  file:
-    path: /var/tmp{{ ansible_date_time.date }}
-    state: directory
-    mode: '0755'
+   - name: Create temp directory
+     file:
+       path: /var/tmp{{ ansible_date_time.date }}
+       state: directory
+       mode: '0755'
     
   vars:
     report_dir: "/var/tmp{{ ansible_date_time.date }}"
