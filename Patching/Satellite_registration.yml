@@ -5,7 +5,7 @@
   gather_facts: yes
 
   vars:
-    report_dir: "/home/creddy/patching/reports/{{ ansible_date_time.date }}"
+    report_dir: "/var/tmp/{{ ansible_date_time.date }}"
 
   tasks:
 
