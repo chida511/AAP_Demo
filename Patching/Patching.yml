@@ -1,0 +1,62 @@
+---
+- name: OS Patching Playbook (Security/Full)
+  hosts: all
+  become: yes
+  gather_facts: yes
+
+  vars:
+    report_dir: "/home/creddy/patching/reports/{{ ansible_date_time.date }}"
+
+  tasks:
+
+    - name: Ensure report directory exists on localhost
+      delegate_to: localhost
+      file:
+        path: "{{ report_dir }}"
+        state: directory
+        mode: '0755'
+
+    # ---------------- PATCH EXECUTION ----------------
+    - name: Apply security updates
+      dnf:
+        name: "*"
+        state: latest
+        security: yes
+      register: patch_output
+
+    - name: Save patch output
+      copy:
+        dest: "{{ report_dir }}/patch_{{ inventory_hostname }}.json"
+        content: "{{ patch_output | to_nice_json }}"
+      delegate_to: localhost
+
+    # ---------------- REBOOT CHECK ----------------
+    - name: Check if reboot is required
+      command: needs-restarting -r
+      register: reboot_required
+      failed_when: false
+      changed_when: false
+
+    # ---------------- REBOOT ----------------
+    - name: Reboot system if required
+      reboot:
+        reboot_timeout: 900
+      when: reboot_required.rc != 0
+
+    - name: Wait for system after reboot
+      wait_for_connection:
+        delay: 30
+        timeout: 600
+
+    # ---------------- POST PATCH VALIDATION ----------------
+    - name: Verify kernel version
+      command: uname -r
+      register: kernel_after
+      changed_when: false
+
+    - name: Save kernel info
+      copy:
+        dest: "{{ report_dir }}/kernel_{{ inventory_hostname }}.txt"
+        content: |
+          Kernel After Patch: {{ kernel_after.stdout }}
+      delegate_to: localhost
