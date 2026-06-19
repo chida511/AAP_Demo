@@ -3,27 +3,23 @@
   hosts: all
   become: yes
   gather_facts: yes
-   - name: Create temp directory
-     file:
-       path: /var/tmp{{ ansible_date_time.date }}
-       state: directory
-       mode: '0755'
-    
+
   vars:
     report_dir: "/var/tmp{{ ansible_date_time.date }}"
 
   tasks:
+
+    - name: Create temp directory
+      file:
+        path: "{{ report_dir }}"
+        state: directory
+        mode: '0755'
 
     - name: Check if system is already registered
       command: subscription-manager identity
       register: reg_check
       failed_when: false
       changed_when: false
-
-    - name: Debug registration status
-      debug:
-        msg: "System already registered"
-      when: reg_check.rc == 0
 
     - name: Register system if not registered (AAP Vault)
       command: >
@@ -32,23 +28,19 @@
         --password {{ rh_password }}
         --auto-attach
       when: reg_check.rc != 0
-      no_log: false
       register: reg_result
 
-    - name: Verify registration after execution
+    - name: Verify registration
       command: subscription-manager identity
       register: identity
       changed_when: false
 
-    - name: Save registration report to localhost
-      copy:
-        dest: "{{ report_dir }}/registration_{{ inventory_hostname }}.txt"
-        content: |
-          Hostname: {{ inventory_hostname }}
-          Registration Status: SUCCESS
-          Identity:
-          {{ identity.stdout }}
-      delegate_to: localhost
+    - name: Show registration result (no file storage)
+      debug:
+        msg:
+          - "Host: {{ inventory_hostname }}"
+          - "Status: SUCCESS"
+          - "{{ identity.stdout }}"
 
     - name: Fail if registration failed
       fail:
